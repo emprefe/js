@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-Time Pixel Inspector Demo</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      background: linear-gradient(45deg, #ff9a9e, #fad0c4, #a1c4fd, #c2e9fb);
+      background-size: 400% 400%;
+      height: 100vh;
+      animation: gradientAnimation 15s ease infinite;
+    }
+    
+    @keyframes gradientAnimation {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    
+    #pixel-inspector {
+      position: fixed;
+      z-index: 9999;
+      border: 2px solid #333;
+      background-color: rgba(0, 0, 0, 0.0);
+      color: white;
+      padding: 3px;
+      border-radius: 4px;
+      width: 220px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      top: 10px;
+      left: 10px;
+      touch-action: none;
+    }
+    
+    #handle {
+      cursor: move;
+      padding: 5px;
+      background-color: #444;
+      border-radius: 3px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    #handle-text {
+      font-weight: bold;
+    }
+    
+    #header-controls {
+      display: flex;
+      gap: 6px;
+    }
+    
+    #header-controls button {
+      background-color: #555;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      width: 28px;
+      height: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+    
+    #header-controls button:hover {
+      background-color: #666;
+    }
+    
+    #header-controls button.active {
+      background-color: #008cff;
+    }
+    
+    #pixel-preview {
+      width: 100%;
+      display: flex;
+      gap: 10px;
+    }
+    
+    #color-preview {
+      width: 60px;
+      height: 60px;
+      border: 1px solid #999;
+      border-radius: 3px;
+      background-color: red;
+    }
+    
+    #pixel-data {
+      flex-grow: 1;
+    }
+    
+    .data-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 2px;
+    }
+    
+    .data-label {
+      font-weight: 600;
+      color: white;
+    }
+    
+    .data-value {
+      font-family: monospace;
+      font-weight: bold;
+    }
+    
+    #magnifier-container {
+      display: flex;
+      flex-direction: column;
+      margin-top: 2px;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    #magnifier {
+      position: relative;
+      width: 150px;
+      height: 150px;
+      border: 1px solid #666;
+      overflow: hidden;
+      background-color: transparent;
+    }
+    
+    #magnifier.transparent-view {
+      background-color: transparent;
+      border: 1px dashed rgba(255, 255, 255, 0.5);
+    }
+    
+    #magnifier.transparent-view::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 11px;
+      height: 11px;
+      border: 1px solid red;
+      border-radius: 50%;
+      z-index: 2;
+      pointer-events: none;
+      background-color: transparent;
+    }
+    
+    #zoom-controls {
+      display: flex;
+      flex-direction: inline;
+      height: 42px;
+      width: 150px;      
+      margin: 0px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    #zoom-slider {
+      writing-mode: horizontal-tb;
+      direction: ltr;
+      width: 120px;
+      height: 30px;
+      padding: 0;
+      margin: 0;
+    }
+    
+    #zoom-value {
+      font-size: 12px;
+      margin-top: 5px;
+      font-weight: bold;
+    }
+    
+    #pixel-grid {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      display: grid;
+    }
+    
+    .pixel-cell {
+      position: relative;
+      box-sizing: border-box;
+      aspect-ratio: 1;
+      background-color: transparent;
+    }
+    
+    .pixel-cell.center {
+      border: 1px solid red !important;
+      z-index: 1;
+    }
+    
+    #position-display {
+      margin-top: 0px;
+      font-size: 12px;
+      color: white;
+    }
+    
+    .compact-mode #pixel-preview,
+    .compact-mode #position-display {
+      display: none;
+    }
+    
+    .compact-mode #magnifier-container {
+      margin-top: 0;
+    }
+    
+    /* Test color squares */
+    .color-square {
+      position: absolute;
+      width: 100px;
+      height: 100px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    }
+    
+    #fps-display {
+      position: absolute;
+      bottom: 5px;
+      right: 10px;
+      font-size: 12px;
+      color: white;
+      z-index: 5;
+    }
+    
+    /* Drag handles on all edges */
+    .drag-handle {
+      position: absolute;
+      cursor: move;
+      z-index: 10000;
+    }
+    
+    #drag-top {
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 5px;
+    }
+    
+    #drag-bottom {
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 5px;
+    }
+    
+    #drag-left {
+      top: 0;
+      left: 0;
+      width: 5px;
+      height: 100%;
+    }
+    
+    #drag-right {
+      top: 0;
+      right: 0;
+      width: 5px;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <!-- Test color squares -->
+  <div class="color-square" style="background-color: #FF5733; top: 200px; left: 200px;"></div>
+  <div class="color-square" style="background-color: #33FF57; top: 200px; left: 400px;"></div>
+  <div class="color-square" style="background-color: #3357FF; top: 200px; left: 600px;"></div>
+  <div class="color-square" style="background-color: #F3FF33; top: 400px; left: 200px;"></div>
+  <div class="color-square" style="background-color: #FF33F5; top: 400px; left: 400px;"></div>
+  <div class="color-square" style="background-color: #33FFF5; top: 400px; left: 600px;"></div>
+
+  <div id="pixel-inspector">
+    <!-- Edge drag handles -->
+    <div id="drag-top" class="drag-handle"></div>
+    <div id="drag-bottom" class="drag-handle"></div>
+    <div id="drag-left" class="drag-handle"></div>
+    <div id="drag-right" class="drag-handle"></div>
+    
+    <div id="handle">
+      <span id="handle-text">Pixel Inspector</span>
+      <div id="header-controls">
+        <button id="toggle-grid" class="active" title="Toggle Grid">⊞</button>
+        <button id="toggle-compact" title="Compact Mode">□</button>
+      </div>
+    </div>
+    
+    <div id="pixel-preview">
+      <div id="color-preview"></div>
+      <div id="pixel-data">
+        <div class="data-row">
+          <span class="data-label">RGB:</span>
+          <span class="data-value" id="rgb-value">255, 0, 0</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">HEX:</span>
+          <span class="data-value" id="hex-value">#FF0000</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">HSL:</span>
+          <span class="data-value" id="hsl-value">0°, 100%, 50%</span>
+        </div>
+      </div>
+    </div>
+    
+    <div id="magnifier-container">
+      <div id="magnifier" class="transparent-view">
+        <div id="pixel-grid"></div>
+      </div>
+      <div id="zoom-controls">
+        <div id="zoom-value">0x</div>
+        <input type="range" id="zoom-slider" min="0" max="10" step="1" value="0" orient="horizontal">
+      </div>
+    </div>
+    
+    
+    <div id="position-display">
+     Position: X: <span id="x-pos">0</span>, Y: <span id="y-pos">0</span><span id="fps-display">FPS 0</span>
+    </div>
+  </div>
+
+  <script>
+// Optimized code for Pixel Inspector
+(function() {
+  // Cache DOM references
+  const inspector = document.getElementById('pixel-inspector');
+  const handle = document.getElementById('handle');
+  const colorPreview = document.getElementById('color-preview');
+  const rgbValue = document.getElementById('rgb-value');
+  const hexValue = document.getElementById('hex-value');
+  const hslValue = document.getElementById('hsl-value');
+  const pixelGrid = document.getElementById('pixel-grid');
+  const xPos = document.getElementById('x-pos');
+  const yPos = document.getElementById('y-pos');
+  const toggleCompact = document.getElementById('toggle-compact');
+  const toggleGrid = document.getElementById('toggle-grid');
+  const zoomSlider = document.getElementById('zoom-slider');
+  const zoomValue = document.getElementById('zoom-value');
+  const magnifier = document.getElementById('magnifier');
+  const fpsDisplay = document.getElementById('fps-display');
+  
+  // Add drag handles references
+  const dragTop = document.getElementById('drag-top');
+  const dragBottom = document.getElementById('drag-bottom');
+  const dragLeft = document.getElementById('drag-left');
+  const dragRight = document.getElementById('drag-right');
+  const dragHandles = [dragTop, dragBottom, dragLeft, dragRight];
+  
+  // Static color references for background
+  const backgroundColors = [
+    { r: 255, g: 154, b: 158 }, // #ff9a9e
+    { r: 250, g: 208, b: 196 }, // #fad0c4
+    { r: 161, g: 196, b: 253 }, // #a1c4fd
+    { r: 194, g: 233, b: 251 }  // #c2e9fb
+  ];
+  
+  // State variables
+  let isDragging = false;
+  let offsetX, offsetY;
+  let isGridVisible = true;
+  let zoomLevel = 0; // Default to 0 zoom level (no magnification)
+  let gridSize = 1; // Initial grid size
+  let updateLoopId = null;
+  let cells = []; // Store cell references
+  let lastFrameTime = 0;
+  let frameCount = 0;
+  let lastFpsUpdateTime = 0;
+  let targetFrameInterval = 100; // 10 FPS = 100ms per frame
+  let nextFrameTime = 0;
+  
+  // Zoom level to grid size mapping (zoom level: grid size)
+  // For 1x: 3x3, 2x: 5x5, 3x: 7x7, 4x: 9x9, 5x: 11x11
+  const zoomToGridSize = {
+    0: 1,  // No zoom
+    1: 3,  // 3x3 grid (1 real pixel = 9 display pixels)
+    2: 5,  // 5x5 grid
+    3: 7,  // 7x7 grid
+    4: 9,  // 9x9 grid
+    5: 11,  // 11x11 grid
+    6: 13,  // 11x11 grid
+    7: 15,  // 11x11 grid
+    8: 17,  // 11x11 grid
+    9: 19,  // 11x11 grid
+    10: 21  // 11x11 grid
+  };
+  
+  // Create initial grid but hide it 
+  createPixelGrid(gridSize);
+  pixelGrid.style.display = 'none'; // Initially hidden at 0x zoom
+  
+  // Event listeners with passive option where appropriate
+  handle.addEventListener('mousedown', startDrag);
+  handle.addEventListener('touchstart', startDrag, { passive: false });
+  
+  // Add event listeners for all drag handles
+  dragHandles.forEach(dragHandle => {
+    dragHandle.addEventListener('mousedown', startDrag);
+    dragHandle.addEventListener('touchstart', startDrag, { passive: false });
+  });
+  
+  document.addEventListener('mousemove', drag, { passive: true });
+  document.addEventListener('touchmove', drag, { passive: false });
+  
+  document.addEventListener('mouseup', stopDrag);
+  document.addEventListener('touchend', stopDrag);
+  
+  // Compact mode toggle
+  toggleCompact.addEventListener('click', () => {
+    inspector.classList.toggle('compact-mode');
+    toggleCompact.textContent = inspector.classList.contains('compact-mode') ? '▣' : '□';
+    toggleCompact.title = inspector.classList.contains('compact-mode') ? 'Expand' : 'Compact Mode';
+  });
+  
+  // Grid toggle
+  toggleGrid.addEventListener('click', () => {
+    isGridVisible = !isGridVisible;
+    toggleGrid.classList.toggle('active');
+    
+    // Use cached cells instead of querying the DOM again
+    cells.forEach(cell => {
+      if (!cell.isCenter) {
+        cell.style.border = isGridVisible ? '1px solid rgba(100, 100, 100, 0.5)' : 'none';
+      }
+    });
+  });
+  
+  // Improved zoom slider
+  // Improved zoom slider with CORRECT intuitive behavior
+  zoomSlider.addEventListener('input', () => {
+    // Read slider value (0 to 5)
+    const sliderValue = parseInt(zoomSlider.value);
+    
+    // Invert slider for zoom display - slider 5 = zoom 1x, slider 1 = zoom 5x
+    // But preserve 0 as no zoom
+    zoomLevel = sliderValue === 0 ? 0 : (11 - sliderValue);
+    
+    // Display the correct zoom level
+    zoomValue.textContent = `${sliderValue === 0 ? 0 : sliderValue}x`;
+            
+    // Get grid size from mapping
+    const newGridSize = zoomToGridSize[zoomLevel];
+    
+    // Special handling for 0 zoom
+    if (zoomLevel === 0) {
+      pixelGrid.style.display = 'none';
+      magnifier.classList.add('transparent-view');
+    } else {
+      pixelGrid.style.display = 'grid';
+      magnifier.classList.remove('transparent-view');
+      
+      if (newGridSize !== gridSize) {
+        gridSize = newGridSize;
+        createPixelGrid(gridSize);
+      }
+    }
+    
+    // Update with current position
+    scheduleUpdate();
+  });
+  
+  // Function to create the pixel grid - optimized version
+  function createPixelGrid(size) {
+    // Clear existing grid
+    pixelGrid.innerHTML = '';
+    cells = [];
+    
+    // Set grid template
+    pixelGrid.style.gridTemplateColumns = `repeat(${size}, 1fr)`;
+    pixelGrid.style.gridTemplateRows = `repeat(${size}, 1fr)`;
+    
+    // Create grid cells - use document fragment for better performance
+    const fragment = document.createDocumentFragment();
+    const centerCell = Math.floor(size / 2);
+    
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        const cell = document.createElement('div');
+        cell.className = 'pixel-cell';
+        cell.isCenter = (row === centerCell && col === centerCell);
+        
+        // Store the cell's relative position in the grid
+        cell.pixelRow = row;
+        cell.pixelCol = col;
+        
+        // Add click event listener to each cell
+        cell.addEventListener('click', handleCellClick);
+        
+        // Mark center cell
+        if (cell.isCenter) {
+          cell.classList.add('center');
+          cell.style.border = '1px solid red';
+        } else if (isGridVisible) {
+          cell.style.border = '1px solid rgba(100, 100, 100, 0.5)';
+        }
+        
+        // Store cell reference for faster updates
+        cells.push(cell);
+        fragment.appendChild(cell);
+      }
+    }
+    
+    pixelGrid.appendChild(fragment);
+  }
+  
+  // Handle clicks on grid cells
+  function handleCellClick(e) {
+    // Prevent default behavior
+    e.stopPropagation();
+    
+    // Get the clicked cell
+    const cell = e.target;
+    
+    // Get the center position of the magnifier
+    const magnifierRect = magnifier.getBoundingClientRect();
+    const centerX = Math.round(magnifierRect.left + magnifierRect.width / 2);
+    const centerY = Math.round(magnifierRect.top + magnifierRect.height / 2);
+    
+    // Calculate the center cell position
+    const centerCellIndex = Math.floor(gridSize / 2);
+    
+    // Calculate pixel offset based on clicked cell position
+    const rowOffset = cell.pixelRow - centerCellIndex;
+    const colOffset = cell.pixelCol - centerCellIndex;
+    
+    // Calculate zoom factor for accurate positioning
+    const zoomFactor = zoomLevel;
+    
+    // Calculate actual pixel position to move to
+    const targetX = centerX + (colOffset / zoomFactor);
+    const targetY = centerY + (rowOffset / zoomFactor);
+    
+    // Move inspector to center on the clicked pixel
+    moveInspectorTo(targetX, targetY);
+  }
+  
+  // Move inspector to a specific screen position
+  function moveInspectorTo(x, y) {
+    // Get the magnifier's center offset from the inspector's top-left
+    const inspectorRect = inspector.getBoundingClientRect();
+    const magnifierRect = magnifier.getBoundingClientRect();
+    
+    // Calculate offset from inspector edge to magnifier center
+    const offsetX = (magnifierRect.left + magnifierRect.width / 2) - inspectorRect.left;
+    const offsetY = (magnifierRect.top + magnifierRect.height / 2) - inspectorRect.top;
+    
+    // Calculate new inspector position
+    const newLeft = x - offsetX;
+    const newTop = y - offsetY;
+    
+    // Set the new position
+    inspector.style.left = `${newLeft}px`;
+    inspector.style.top = `${newTop}px`;
+    
+    // Update inspector immediately
+    scheduleUpdate();
+  }
+  
+  // Schedule an update with FPS limiting
+  function scheduleUpdate() {
+    const now = performance.now();
+    
+    // If we're past our next frame time, schedule an update
+    if (now >= nextFrameTime) {
+      nextFrameTime = now + targetFrameInterval;
+      
+      if (!updateLoopId) {
+        updateLoopId = requestAnimationFrame(() => {
+          updateInspector();
+          updateLoopId = null;
+        });
+      }
+    }
+  }
+  
+  // Update the inspector with current position data
+  function updateInspector() {
+    const now = performance.now();
+    frameCount++;
+    
+    // Update FPS counter every second
+    if (now - lastFpsUpdateTime > 1000) {
+      const fps = Math.round(frameCount * 1000 / (now - lastFpsUpdateTime));
+      fpsDisplay.textContent = `FPS: ${fps}`;
+      frameCount = 0;
+      lastFpsUpdateTime = now;
+    }
+    
+    // Get the inspector's position
+    const inspectorRect = inspector.getBoundingClientRect();
+    
+    // Get coordinates of the center of the magnifier
+    const magnifierRect = magnifier.getBoundingClientRect();
+    const centerX = Math.round(magnifierRect.left + magnifierRect.width / 2);
+    const centerY = Math.round(magnifierRect.top + magnifierRect.height / 2);
+    
+    // Update position display
+    xPos.textContent = centerX;
+    yPos.textContent = centerY;
+    
+    // Sample the center pixel for color data regardless of zoom level
+    const centerColor = getPixelColorAt(centerX, centerY);
+    if (centerColor) {
+      updateColorDisplay(centerColor.r, centerColor.g, centerColor.b);
+    }
+    
+    // Only update grid if zoom level is greater than 0
+    if (zoomLevel > 0) {
+      // Sample pixels for the grid
+      samplePixelsAtPosition(centerX, centerY);
+    }
+    
+    lastFrameTime = now;
+  }
+  
+  // Sample pixels at a specific position - optimized version
+  function samplePixelsAtPosition(centerX, centerY) {
+    if (gridSize <= 1) return;
+    
+    // Calculate offset once
+    const offset = Math.floor(gridSize / 4);
+    
+    // Map of zoom levels to pixel sampling density
+    // Higher zoom = more pixels in same space (need to sample fewer real pixels)
+    const zoomFactor = zoomLevel;
+    
+    // Calculate cell index and position once for each pixel
+    for (let row = 0; row < gridSize; row++) {
+      for (let col = 0; col < gridSize; col++) {
+        const index = row * gridSize + col;
+        
+        // Calculate actual pixel location
+        // For zoom level 1-5, we need to sample fewer pixels as zoom increases
+        const pixelX = Math.round(centerX + (col - offset) / zoomFactor);
+        const pixelY = Math.round(centerY + (row - offset) / zoomFactor);
+        
+        // Get color and set cell background directly
+        const color = getPixelColorAt(pixelX, pixelY);
+        if (cells[index]) {
+          cells[index].style.backgroundColor = color ? 
+            `rgb(${color.r}, ${color.g}, ${color.b})` : 
+            'rgba(0, 0, 0, 0)';
+        }
+      }
+    }
+  }
+  
+  // Optimized drag handling
+  function startDrag(e) {
+    e.preventDefault();
+    
+    const rect = inspector.getBoundingClientRect();
+    if (e.type === 'touchstart') {
+      offsetX = e.touches[0].clientX - rect.left;
+      offsetY = e.touches[0].clientY - rect.top;
+    } else {
+      offsetX = e.clientX - rect.left;
+      offsetY = e.clientY - rect.top;
+    }
+    
+    isDragging = true;
+  }
+  
+  function drag(e) {
+    if (!isDragging) return;
+    if (e.cancelable) e.preventDefault();
+    
+    const clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
+    
+    const x = clientX - offsetX;
+    const y = clientY - offsetY;
+    
+    // Calculate the center of the magnifier relative to the inspector
+    const magnifierRect = magnifier.getBoundingClientRect();
+    const inspectorRect = inspector.getBoundingClientRect();
+    const magnifierCenterX = magnifierRect.left + magnifierRect.width / 2 - inspectorRect.left;
+    const magnifierCenterY = magnifierRect.top + magnifierRect.height / 2 - inspectorRect.top;
+    
+    // Calculate how far the inspector can go off screen
+    // We allow it to go off screen until the center pixel would hit the edge
+    const maxOffscreenX = magnifierCenterX;
+    const maxOffscreenY = magnifierCenterY;
+    
+    // Allow the inspector to go off screen by the calculated amount
+    const maxX = window.innerWidth - inspector.offsetWidth + maxOffscreenX;
+    const maxY = window.innerHeight - inspector.offsetHeight + maxOffscreenY;
+    const minX = -maxOffscreenX;
+    const minY = -maxOffscreenY;
+    
+    inspector.style.left = Math.max(minX, Math.min(x, maxX)) + 'px';
+    inspector.style.top = Math.max(minY, Math.min(y, maxY)) + 'px';
+    
+    scheduleUpdate();
+  }
+  
+  function stopDrag() {
+    if (isDragging) {
+      isDragging = false;
+      scheduleUpdate();
+    }
+  }
+  
+  // Optimized pixel color detection
+  function getPixelColorAt(x, y) {
+    // Check bounds (now allows pixels at the very edge of the screen)
+    if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) {
+      return null;
+    }
+    
+    try {
+      // Hide inspector temporarily
+      const originalVisibility = inspector.style.visibility;
+      inspector.style.visibility = 'hidden';
+      
+      // Get element at position
+      const element = document.elementFromPoint(x, y);
+      
+      // Restore inspector
+      inspector.style.visibility = originalVisibility;
+      
+      if (element) {
+        // Get computed style
+        const style = window.getComputedStyle(element);
+        const bgColor = style.backgroundColor;
+        
+        if (bgColor && bgColor !== 'transparent' && bgColor !== 'rgba(0, 0, 0, 0)') {
+          const match = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)/);
+          if (match) {
+            return {
+              r: parseInt(match[1], 10),
+              g: parseInt(match[2], 10),
+              b: parseInt(match[3], 10)
+            };
+          }
+        }
+      }
+      
+      // Fallback to gradient
+      return getColorFromPosition(x, y);
+    } catch (error) {
+      return { r: 0, g: 0, b: 0 };
+    }
+  }
+  
+  // Optimized background color calculation
+  function getColorFromPosition(x, y) {
+    // Normalize coordinates
+    const normX = x / window.innerWidth;
+    const normY = y / window.innerHeight;
+    
+    // Blend based on position
+    const blendPos = (normX + normY) / 2;
+    const colorIndex = Math.min(Math.floor(blendPos * backgroundColors.length), backgroundColors.length - 2);
+    
+    const color1 = backgroundColors[colorIndex];
+    const color2 = backgroundColors[colorIndex + 1];
+    
+    // Blend between the two colors
+    const blendFactor = (blendPos * backgroundColors.length) % 1;
+    
+    return {
+      r: Math.round(color1.r * (1 - blendFactor) + color2.r * blendFactor),
+      g: Math.round(color1.g * (1 - blendFactor) + color2.g * blendFactor),
+      b: Math.round(color1.b * (1 - blendFactor) + color2.b * blendFactor)
+    };
+  }
+  
+  // Update color display with memoization
+  let lastColor = { r: -1, g: -1, b: -1 };
+  
+  function updateColorDisplay(r, g, b) {
+    // Ensure values are valid numbers
+    r = Math.max(0, Math.min(255, Math.round(r)));
+    g = Math.max(0, Math.min(255, Math.round(g)));
+    b = Math.max(0, Math.min(255, Math.round(b)));
+    
+    // Skip update if color hasn't changed
+    if (lastColor.r === r && lastColor.g === g && lastColor.b === b) {
+      return;
+    }
+    
+    // Update last color
+    lastColor = { r, g, b };
+    
+    // Update color preview
+    colorPreview.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+    
+    // Update RGB value
+    rgbValue.textContent = `${r}, ${g}, ${b}`;
+    
+    // Update HEX value
+    hexValue.textContent = rgbToHex(r, g, b);
+    
+    // Update HSL value
+    const [h, s, l] = rgbToHsl(r, g, b);
+    hslValue.textContent = `${h}°, ${s}%, ${l}%`;
+  }
+  
+  // Optimized RGB to HEX conversion
+  function rgbToHex(r, g, b) {
+    return '#' + 
+      (r < 16 ? '0' : '') + r.toString(16).toUpperCase() + 
+      (g < 16 ? '0' : '') + g.toString(16).toUpperCase() + 
+      (b < 16 ? '0' : '') + b.toString(16).toUpperCase();
+  }
+  
+  // Optimized RGB to HSL conversion
+  function rgbToHsl(r, g, b) {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+    
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const d = max - min;
+    const l = (max + min) / 2;
+    
+    if (d === 0) {
+      return [0, 0, Math.round(l * 100)]; // achromatic
+    }
+    
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    
+    let h;
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      default: h = (r - g) / d + 4; break;
+    }
+    
+    h /= 6;
+    
+    return [
+      Math.round(h * 360), 
+      Math.round(s * 100), 
+      Math.round(l * 100)
+    ];
+  }
+  
+  // FPS-limited update function
+  function updateLoop(timestamp) {
+    if (timestamp >= nextFrameTime) {
+      nextFrameTime = timestamp + targetFrameInterval;
+      updateInspector();
+    }
+    
+    requestAnimationFrame(updateLoop);
+  }
+  
+  // Start the update loop
+  nextFrameTime = performance.now();
+  lastFpsUpdateTime = performance.now();
+  requestAnimationFrame(updateLoop);
+  
+  // Initialize with default values
+  updateColorDisplay(255, 0, 0);
+})();
+  </script>
+</body>
+</html>
