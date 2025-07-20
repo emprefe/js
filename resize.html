@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resize Handle Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        
+        .resizable-container {
+            position: relative;
+            border: 1px solid #ccc;
+            padding: 15px;
+            width: 400px;
+            height: 300px;
+            margin: 20px 0;
+            overflow: auto;
+        }
+        
+        .resize-handle {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 20px;
+            height: 20px;
+            background: transparent;
+            border: none;
+            padding: 0;
+            cursor: se-resize;
+            z-index: 10;
+        }
+        
+        .panel-content {
+            height: 100%;
+            width: 100%;
+            overflow: auto;
+        }
+        
+        .coordinates {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: #f0f0f0;
+            padding: 5px;
+            border: 1px solid #ccc;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>Resize Corner Handle Example</h1>
+    
+    <p>This example shows how to implement a resize handle in the corner of an element.</p>
+    
+    <!-- Resizable Container 1 - Always Active -->
+    <div id="container1" class="resizable-container">
+        <div class="panel-content">
+            <h3>Always Active Resize Handle</h3>
+            <p>Click and drag the corner handle to resize this container.</p>
+            <p>This container has the resize handle always visible and active.</p>
+        </div>
+        
+        <!-- Resize handle with inline mouse events -->
+        <button class="resize-handle" 
+                onmousedown="initResize('container1', 200, 150)" 
+                onmouseup="stopResizing('container1')">
+            <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBmaWxsPSIjNjY2IiBkPSJNMTEuNSAxNWwxLTFWMTJsLTMgM2gybTEtNnYybC0xIDFoMmwxLTF2LTJoLTJtLTQgNXYtMmwtMS0xdi0yaC0ybDEgMWgydjJsMSAxaDJ2LTFoLTF6Ii8+PC9zdmc+" 
+                 width="16" height="16" alt="Resize">
+        </button>
+    </div>
+    
+    <!-- Resizable Container 2 - Toggle Resize Mode -->
+    <div id="container2" class="resizable-container">
+        <div class="panel-content">
+            <h3>Toggleable Resize Mode</h3>
+            <p>Use the buttons below to enable or disable resize mode.</p>
+            <p>When enabled, you can resize by dragging the bottom-right corner.</p>
+            
+            <div style="margin-top: 20px;">
+                <button onclick="enableResizeMode('container2')">Enable Resize Mode</button>
+                <button onclick="disableResizeMode('container2')">Disable Resize Mode</button>
+            </div>
+        </div>
+        
+        <!-- This handle will be added/removed by JavaScript -->
+    </div>
+    
+    <!-- Coordinates Display -->
+    <div class="coordinates">
+        <span id="X-coord">X: 0</span> | 
+        <span id="Y-coord">Y: 0</span>
+    </div>
+    
+    <script>
+    // Global variables
+    var currentHeightX = 0;
+    var currentHeightY = 0;
+    var currentPositionX = 0;
+    var currentPositionY = 0;
+    var newPositionX = 0;
+    var newPositionY = 0;
+    var direction = 'Released';
+    var mouseX = 0;
+    var mouseY = 0;
+    
+    // Store cleanup functions by element ID
+    var resizeCleanupFunctions = {};
+    
+    /**
+     * Track mouse position for coordinate display
+     */
+    document.addEventListener('mousemove', function(event) {
+        mouseX = event.clientX;
+        mouseY = event.clientY;
+        
+        // Update coordinate display
+        var xCoord = document.getElementById('X-coord');
+        var yCoord = document.getElementById('Y-coord');
+        if (xCoord) xCoord.textContent = 'X: ' + mouseX;
+        if (yCoord) yCoord.textContent = 'Y: ' + mouseY;
+    });
+    
+    /**
+     * Main resize function that manages object resizing
+     * @param {string} objId - The ID of the object to resize
+     * @param {number} minWidth - Minimum width constraint
+     * @param {number} minHeight - Minimum height constraint
+     */
+    function resize_obj(objId, minWidth = 10, minHeight = 10) {
+      // Get the target element
+      const targetElement = document.getElementById(objId);
+      if (!targetElement) return;
+      
+      // Setup event listeners
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mousedown', function(e) {
+        handleMouseDown(e, objId);
+      });
+      document.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener('dblclick', handleDoubleClick);
+      
+      /**
+       * Track mouse position and handle resizing
+       * @param {MouseEvent} event - Mouse event
+       */
+      function handleMouseMove(event) {
+        // Handle resizing if mouse is pressed
+        if (direction === 'Pressed') {
+          // Set the new cursor location
+          newPositionX = event.clientX;
+          newPositionY = event.clientY;
+          
+          // Calculate mouse movement in pixels
+          const movePerPixelsX = parseInt(newPositionX - currentPositionX);
+          const movePerPixelsY = parseInt(newPositionY - currentPositionY);
+          
+          // Add mouse movement to current dimensions
+          let newWidth = parseInt(currentHeightX + movePerPixelsX);
+          let newHeight = parseInt(currentHeightY + movePerPixelsY);
+          
+          // Apply minimum constraints
+          newWidth = Math.max(newWidth, minWidth);
+          newHeight = Math.max(newHeight, minHeight);
+          
+          // Set the element dimensions
+          targetElement.style.width = newWidth + 'px';
+          targetElement.style.height = newHeight + 'px';
+        }
+      }
+      
+      /**
+       * Handle mouse down event to start resizing
+       * @param {MouseEvent} event - Mouse event
+       * @param {string} objId - Object ID to resize
+       */
+      function handleMouseDown(event, objId) {
+        // Set direction to Pressed
+        direction = 'Pressed';
+        
+        // Save current cursor position
+        currentPositionX = event.clientX;
+        currentPositionY = event.clientY;
+        
+        // Get current element dimensions
+        const elementStyle = window.getComputedStyle(document.getElementById(objId));
+        const tempWidth = elementStyle.width;
+        const tempHeight = elementStyle.height;
+        
+        // Remove 'px' from dimensions and convert to integers
+        currentHeightX = parseInt(tempWidth);
+        currentHeightY = parseInt(tempHeight);
+        
+        // Prevent default to avoid text selection during resize
+        event.preventDefault();
+      }
+      
+      /**
+       * Handle mouse up event to stop resizing
+       */
+      function handleMouseUp() {
+        direction = 'Released';
+      }
+      
+      /**
+       * Handle double click to reset state
+       */
+      function handleDoubleClick() {
+        direction = 'Released';
+      }
+      
+      /**
+       * Remove all event listeners
+       */
+      function cleanup() {
+        direction = 'Released';
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mousedown', handleMouseDown);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener('dblclick', handleDoubleClick);
+      }
+      
+      // Return cleanup function for external use
+      return cleanup;
+    }
+    
+    /**
+     * Initialize resizing for a specific element
+     * @param {string} elementId - ID of the element to make resizable
+     * @param {number} minWidth - Minimum width in pixels
+     * @param {number} minHeight - Minimum height in pixels
+     */
+    function initResize(elementId, minWidth = 100, minHeight = 75) {
+      // Clean up previous instance if exists
+      if (resizeCleanupFunctions[elementId]) {
+        resizeCleanupFunctions[elementId]();
+      }
+      
+      // Get the element
+      var element = document.getElementById(elementId);
+      if (!element) return;
+      
+      // Initialize resizing with minimum dimensions
+      resizeCleanupFunctions[elementId] = resize_obj(elementId, minWidth, minHeight);
+      
+      // Update status
+      element.setAttribute('data-resize-active', 'true');
+    }
+    
+    /**
+     * Stop resizing for a specific element
+     * @param {string} elementId - ID of the element to stop resizing
+     */
+    function stopResizing(elementId) {
+      if (resizeCleanupFunctions[elementId]) {
+        resizeCleanupFunctions[elementId]();
+        delete resizeCleanupFunctions[elementId];
+        
+        // Update status
+        var element = document.getElementById(elementId);
+        if (element) {
+          element.setAttribute('data-resize-active', 'false');
+        }
+      }
+    }
+    
+    /**
+     * Enable resize mode with a visual handle
+     * @param {string} elementId - ID of the element to make resizable
+     */
+    function enableResizeMode(elementId) {
+      var element = document.getElementById(elementId);
+      if (!element) return;
+      
+      // Add resize handle if not already present
+      if (!element.querySelector('.resize-handle')) {
+        // Create resize handle
+        var handle = document.createElement('button');
+        handle.className = 'resize-handle';
+        handle.innerHTML = '<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBmaWxsPSIjNjY2IiBkPSJNMTEuNSAxNWwxLTFWMTJsLTMgM2gybTEtNnYybC0xIDFoMmwxLTF2LTJoLTJtLTQgNXYtMmwtMS0xdi0yaC0ybDEgMWgydjJsMSAxaDJ2LTFoLTF6Ii8+PC9zdmc+" width="16" height="16" alt="Resize">';
+        
+        // Add mouse events
+        handle.addEventListener('mousedown', function(e) {
+          initResize(elementId, 200, 150);
+          e.preventDefault(); // Prevent focus stealing
+        });
+        
+        handle.addEventListener('mouseup', function() {
+          stopResizing(elementId);
+        });
+        
+        // Add to container
+        element.appendChild(handle);
+      }
+      
+      // Let user know resize mode is active
+      alert('Resize mode enabled. Click and drag the corner handle to resize.');
+    }
+    
+    /**
+     * Disable resize mode and remove handle
+     * @param {string} elementId - ID of the element
+     */
+    function disableResizeMode(elementId) {
+      var element = document.getElementById(elementId);
+      if (!element) return;
+      
+      // Stop any active resizing
+      stopResizing(elementId);
+      
+      // Remove resize handle if present
+      var handle = element.querySelector('.resize-handle');
+      if (handle) {
+        element.removeChild(handle);
+      }
+      
+      // Let user know resize mode is disabled
+      alert('Resize mode disabled.');
+    }
+    </script>
+
+</body>
+</html>

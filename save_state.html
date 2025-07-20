@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Save State Manager Demo</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+
+    .container {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .editor-panel {
+      flex: 1;
+      min-width: 300px;
+    }
+
+    .controls-panel {
+      width: 100%;
+      background-color: #f0f0f0;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+    }
+
+    .editor-content {
+      border: 1px solid #ccc;
+      padding: 15px;
+      min-height: 300px;
+      border-radius: 5px;
+      background-color: white;
+    }
+
+    .version-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    button {
+      background-color: #4527A0;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background-color 0.2s;
+    }
+
+    button:hover {
+      background-color: #5E35B1;
+    }
+
+    button:active {
+      background-color: #311B92;
+    }
+
+    input[type="text"], select {
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    input[type="text"] {
+      min-width: 200px;
+    }
+
+    select {
+      min-width: 200px;
+    }
+
+    .status-panel {
+      margin-top: 15px;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background-color: #f9f9f9;
+    }
+
+    .history-navigator {
+      display: flex;
+      gap: 5px;
+    }
+
+    .history-navigator button {
+      padding: 5px 10px;
+      font-size: 16px;
+      width: 40px;
+    }
+
+    h1, h2 {
+      color: #4527A0;
+    }
+    
+    h3 {
+      margin-top: 0;
+    }
+
+    .notification {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 10px 15px;
+      background-color: #4CAF50;
+      color: white;
+      border-radius: 4px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      display: none;
+      z-index: 1000;
+    }
+    
+    .notification.error {
+      background-color: #F44336;
+    }
+  </style>
+</head>
+<body>
+  <h1>Save State Manager Demo</h1>
+  <p>This demo showcases the Save State Manager with named savepoints and version history.</p>
+  
+  <div class="container">
+    <div class="editor-panel">
+      <div class="controls-panel">
+        <h3>Version Controls</h3>
+        <div class="version-controls">
+          <input type="text" id="version-name" placeholder="Version name">
+          <button onclick="saveNamedState()">Save Version</button>
+          <select id="version-select"></select>
+          <div class="history-navigator">
+            <button onclick="moveBackward()" title="Go back in history">⏮</button>
+            <button onclick="moveForward()" title="Go forward in history">⏭</button>
+          </div>
+        </div>
+        <div class="secondary-controls">
+          <button onclick="clearHistory()">Clear History</button>
+          <button onclick="showHistoryData()">Show Raw History Data</button>
+        </div>
+      </div>
+      
+      <h3>Editable Content</h3>
+      <div id="editor-content" class="editor-content" contenteditable="true">
+        <h3>Sample Content</h3>
+        <p>This is an editable area. Make changes to the content and use the version controls above to save and manage versions.</p>
+        <p>Try the following:</p>
+        <ul>
+          <li>Edit this content</li>
+          <li>Save a named version</li>
+          <li>Make more changes</li>
+          <li>Save another version</li>
+          <li>Use the select dropdown to switch between versions</li>
+          <li>Use the navigation buttons to move back and forth in history</li>
+        </ul>
+        <p>The <strong>Save State Manager</strong> keeps track of your changes and provides navigation through your editing history.</p>
+      </div>
+      
+      <div class="status-panel">
+        <h3>Status</h3>
+        <div id="status-output">
+          Ready. Make changes to the content and save versions.
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div id="notification" class="notification"></div>
+  
+  <script src="save_state.js"></script>
+  <script>
+  // Helper functions for our demo
+  function showNotification(message, isError = false) {
+    const notification = document.getElementById('notification');
+    notification.textContent = message;
+    notification.className = isError ? 'notification error' : 'notification';
+    notification.style.display = 'block';
+    
+    // Hide after 3 seconds
+    setTimeout(() => {
+      notification.style.display = 'none';
+    }, 3000);
+  }
+  
+  function updateStatus(message, isError = false) {
+    const statusOutput = document.getElementById('status-output');
+    const timestamp = new Date().toLocaleTimeString();
+    
+    if (statusOutput) {
+      statusOutput.innerHTML = `<strong>${timestamp}</strong>: ${message}`;
+      statusOutput.className = isError ? 'error' : '';
+    }
+    
+    // Also show notification
+    showNotification(message, isError);
+  }
+  
+  // Demo specific functions
+  function saveNamedState() {
+    const manager = save_state('editor-content', 'version-name', 'version-select');
+    const result = manager.saveNamedState();
+    if (result) {
+      updateStatus(`Saved version: ${manager.history[manager.current_position].name}`);
+    } else {
+      updateStatus('Failed to save version', true);
+    }
+  }
+  
+  function moveBackward() {
+    const manager = save_state('editor-content', 'version-name', 'version-select');
+    const result = manager.moveBackward();
+    if (result) {
+      updateStatus(`Moved to older version: ${manager.history[manager.current_position].name}`);
+    } else {
+      updateStatus('Already at oldest version', true);
+    }
+  }
+  
+  function moveForward() {
+    const manager = save_state('editor-content', 'version-name', 'version-select');
+    const result = manager.moveForward();
+    if (result) {
+      updateStatus(`Moved to newer version: ${manager.history[manager.current_position].name}`);
+    } else {
+      updateStatus('Already at newest version', true);
+    }
+  }
+  
+  function clearHistory() {
+    if (confirm('Are you sure you want to clear all history? This cannot be undone.')) {
+      const manager = save_state('editor-content', 'version-name', 'version-select');
+      manager.clearHistory();
+      updateStatus('History cleared. Starting fresh.');
+    }
+  }
+  
+  function showHistoryData() {
+    const manager = save_state('editor-content', 'version-name', 'version-select');
+    const info = manager.getDebugInfo();
+    updateStatus(`Current position: ${info.current_position}, History size: ${info.history.length} entries`);
+    console.log('History data:', info);
+  }
+  
+  // Initialize on document load
+  document.addEventListener('DOMContentLoaded', function() {
+    // Initialize the save state manager
+    save_state('editor-content', 'version-name', 'version-select');
+  });
+  </script>
+  
+  
+  <script>
+  
+  /**
+ * save_state.js - A simple state management system for web elements
+ * Includes history tracking, autosave, and navigation functions
+ */
+
+/**
+ * Primary class for managing element state, history, and persistence
+ */
+class SaveStateManager {
+  constructor(target_element_id, name_element_id = null, select_element_id = null, read_element_id = null, options = {}) {
+    // Core elements
+    this.target_element_id = target_element_id;
+    this.name_element_id = name_element_id;
+    this.select_element_id = select_element_id;
+    this.read_element_id = read_element_id;
+    
+    // Configuration
+    this.options = {
+      max_history: options.max_history || 15, // Maximum number of history states
+      autosave_delay: options.autosave_delay || 3000, // Milliseconds between autosaves
+      storage_prefix: options.storage_prefix || 'save_state_', // Prefix for localStorage keys
+      default_version_name: options.default_version_name || 'Version',
+      ...options
+    };
+    
+    // State tracking
+    this.history = [];
+    this.current_position = -1;
+    this.autosave_timer = null;
+    this.storage_key = this.options.storage_prefix + this.target_element_id;
+    this.history_key = this.storage_key + '_history';
+    
+    // Initialize
+    this.init();
+  }
+  
+  /**
+   * Initialize the state manager
+   */
+  init() {
+    // Load initial state from different sources in order of priority
+    this.loadInitialState();
+    
+    // Set up autosave
+    this.setupAutosave();
+    
+    // Set up UI elements if provided
+    if (this.select_element_id) {
+      this.setupSelectElement();
+    }
+    
+    // Initialize name element if provided
+    if (this.name_element_id) {
+      this.setupNameElement();
+    }
+    
+    // Return for chaining
+    return this;
+  }
+  
+  /**
+   * Load the initial state from available sources
+   */
+  loadInitialState() {
+    // First try local storage for the target element
+    const savedState = localStorage.getItem(this.storage_key);
+    
+    if (savedState) {
+      // We have a saved state, restore it
+      this.setTargetContent(savedState);
+      
+      // Also try to restore history if available
+      try {
+        const historyData = JSON.parse(localStorage.getItem(this.history_key) || '{}');
+        if (historyData.states && Array.isArray(historyData.states)) {
+          this.history = historyData.states;
+          this.current_position = historyData.position || (this.history.length - 1);
+        }
+      } catch (e) {
+        console.warn('Could not parse history data, starting fresh');
+        this.saveCurrentState(); // Create first history entry
+      }
+    } 
+    // If no saved state but we have a read element, use that
+    else if (this.read_element_id) {
+      const readElement = document.getElementById(this.read_element_id);
+      if (readElement) {
+        const content = readElement.value || readElement.innerHTML;
+        this.setTargetContent(content);
+        this.saveCurrentState(); // Create first history entry
+      } else {
+        console.warn(`Read element with ID ${this.read_element_id} not found`);
+      }
+    }
+    // Otherwise, leave as is but create first history entry
+    else {
+      this.saveCurrentState();
+    }
+    
+    return this;
+  }
+  
+  /**
+   * Set up autosave functionality
+   */
+  setupAutosave() {
+    const targetElement = document.getElementById(this.target_element_id);
+    
+    if (!targetElement) {
+      console.error(`Target element with ID ${this.target_element_id} not found`);
+      return this;
+    }
+    
+    // Add event listeners for changes
+    const eventTypes = ['input', 'change', 'blur'];
+    
+    eventTypes.forEach(eventType => {
+      targetElement.addEventListener(eventType, () => {
+        // Clear existing timer
+        if (this.autosave_timer) {
+          clearTimeout(this.autosave_timer);
+        }
+        
+        // Set new timer
+        this.autosave_timer = setTimeout(() => {
+          this.saveToLocalStorage();
+        }, this.options.autosave_delay);
+      });
+    });
+    
+    // Also save on page unload for extra safety
+    window.addEventListener('beforeunload', () => {
+      this.saveToLocalStorage();
+    });
+    
+    return this;
+  }
+  
+  /**
+   * Set up the select element for version management
+   */
+  setupSelectElement() {
+    const selectElement = document.getElementById(this.select_element_id);
+    if (!selectElement) {
+      console.warn(`Select element with ID ${this.select_element_id} not found`);
+      return;
+    }
+    
+    // Clear existing options
+    selectElement.innerHTML = '';
+    
+    // Add default option
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = '-- Select Version --';
+    selectElement.appendChild(defaultOption);
+    
+    // Populate with saved versions
+    this.updateSelectOptions();
+    
+    // Add change event listener
+    selectElement.addEventListener('change', () => {
+      const selectedId = selectElement.value;
+      if (selectedId) {
+        const result = this.loadVersionById(selectedId);
+        
+        // Check if we have a global updateStatus function
+        if (typeof updateStatus === 'function') {
+          if (result) {
+            updateStatus(`Loaded version: ${this.history[this.current_position].name}`);
+          } else {
+            updateStatus(`Failed to load version with ID: ${selectedId}`, true);
+          }
+        }
+        
+        // Reset select after loading
+        selectElement.value = '';
+      }
+    });
+  }
+  
+  /**
+   * Set up the name input element
+   */
+  setupNameElement() {
+    const nameElement = document.getElementById(this.name_element_id);
+    if (!nameElement) {
+      console.warn(`Name element with ID ${this.name_element_id} not found`);
+      return;
+    }
+    
+    // Set placeholder if not already set
+    if (!nameElement.placeholder) {
+      nameElement.placeholder = 'Enter version name';
+    }
+    
+    // Set initial value if empty
+    if (!nameElement.value) {
+      nameElement.value = this.getDefaultVersionName();
+    }
+  }
+  
+  /**
+   * Generate a default version name
+   */
+  getDefaultVersionName() {
+    return `${this.options.default_version_name} ${new Date().toLocaleTimeString()}`;
+  }
+  
+  /**
+   * Update the select element with current versions
+   */
+  updateSelectOptions() {
+    if (!this.select_element_id) return;
+    
+    const selectElement = document.getElementById(this.select_element_id);
+    if (!selectElement) return;
+    
+    // Save currently selected value
+    const currentSelection = selectElement.value;
+    
+    // Remove all options except the default
+    while (selectElement.options.length > 1) {
+      selectElement.remove(1);
+    }
+    
+    // Add each version as an option
+    this.history.forEach((state, index) => {
+      const option = document.createElement('option');
+      option.value = state.id || index;
+      
+      // Create display name
+      let displayName = state.name || `${this.options.default_version_name} ${index + 1}`;
+      if (state.date) {
+        displayName += ` (${new Date(state.date).toLocaleString()})`;
+      }
+      if (index === this.current_position) {
+        displayName += ' ←Current';
+      }
+      
+      option.textContent = displayName;
+      
+      // Mark as selected if it was previously selected
+      if (state.id === parseInt(currentSelection) || index === parseInt(currentSelection)) {
+        option.selected = true;
+      }
+      
+      selectElement.appendChild(option);
+    });
+  }
+  
+  /**
+   * Save current state to localStorage
+   */
+  saveToLocalStorage() {
+    const targetElement = document.getElementById(this.target_element_id);
+    
+    if (!targetElement) {
+      console.error(`Target element with ID ${this.target_element_id} not found`);
+      return false;
+    }
+    
+    const content = this.getElementContent(targetElement);
+    localStorage.setItem(this.storage_key, content);
+    
+    return true;
+  }
+  
+  /**
+   * Get the content from an element (works with inputs, textareas, and other elements)
+   */
+  getElementContent(element) {
+    // For form elements
+    if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+      return element.value;
+    }
+    // For other elements
+    else {
+      return element.innerHTML;
+    }
+  }
+  
+  /**
+   * Set content to the target element
+   */
+  setTargetContent(content) {
+    const targetElement = document.getElementById(this.target_element_id);
+    
+    if (!targetElement) {
+      console.error(`Target element with ID ${this.target_element_id} not found`);
+      return false;
+    }
+    
+    // For form elements
+    if (targetElement.tagName === 'INPUT' || targetElement.tagName === 'TEXTAREA') {
+      targetElement.value = content;
+    }
+    // For other elements
+    else {
+      targetElement.innerHTML = content;
+    }
+    
+    // Trigger change event
+    const event = new Event('change', { bubbles: true });
+    targetElement.dispatchEvent(event);
+    
+    return true;
+  }
+  
+  /**
+   * Save the current state to history
+   */
+  saveCurrentState() {
+    const targetElement = document.getElementById(this.target_element_id);
+    
+    if (!targetElement) {
+      console.error(`Target element with ID ${this.target_element_id} not found`);
+      return false;
+    }
+    
+    const content = this.getElementContent(targetElement);
+    const timestamp = Date.now();
+    
+    // If we're not at the end of history, truncate forward history
+    if (this.current_position < this.history.length - 1) {
+      this.history = this.history.slice(0, this.current_position + 1);
+    }
+    
+    // Create state object with metadata
+    const state = {
+      id: timestamp,
+      name: this.getDefaultVersionName(),
+      content: content,
+      date: new Date().toISOString()
+    };
+    
+    // Add new state
+    this.history.push(state);
+    
+    // Limit history size
+    if (this.history.length > this.options.max_history) {
+      this.history = this.history.slice(-this.options.max_history);
+    }
+    
+    // Update position
+    this.current_position = this.history.length - 1;
+    
+    // Save history to localStorage
+    this.saveHistoryToStorage();
+    
+    // Update select element
+    this.updateSelectOptions();
+    
+    return true;
+  }
+  
+  /**
+   * Save current state with name from name element
+   */
+  saveNamedState() {
+    let name = '';
+    
+    // Try to get name from name element
+    if (this.name_element_id) {
+      const nameElement = document.getElementById(this.name_element_id);
+      if (nameElement) {
+        name = nameElement.value.trim();
+        
+        // Reset name field after saving
+        nameElement.value = this.getDefaultVersionName();
+      }
+    }
+    
+    // If no name provided, use default
+    if (!name) {
+      name = this.getDefaultVersionName();
+    }
+    
+    const targetElement = document.getElementById(this.target_element_id);
+    if (!targetElement) {
+      console.error(`Target element with ID ${this.target_element_id} not found`);
+      return false;
+    }
+    
+    const content = this.getElementContent(targetElement);
+    const timestamp = Date.now();
+    
+    // If we're not at the end of history, truncate forward history
+    if (this.current_position < this.history.length - 1) {
+      this.history = this.history.slice(0, this.current_position + 1);
+    }
+    
+    // Create state object with metadata
+    const state = {
+      id: timestamp,
+      name: name,
+      content: content,
+      date: new Date().toISOString()
+    };
+    
+    // Add new state
+    this.history.push(state);
+    
+    // Limit history size
+    if (this.history.length > this.options.max_history) {
+      this.history = this.history.slice(-this.options.max_history);
+    }
+    
+    // Update position
+    this.current_position = this.history.length - 1;
+    
+    // Save history to localStorage
+    this.saveHistoryToStorage();
+    
+    // Update select element
+    this.updateSelectOptions();
+    
+    return true;
+  }
+  
+  /**
+   * Save history to localStorage
+   */
+  saveHistoryToStorage() {
+    const historyData = {
+      states: this.history,
+      position: this.current_position
+    };
+    
+    localStorage.setItem(this.history_key, JSON.stringify(historyData));
+    return true;
+  }
+  
+  /**
+   * Load content from read element to target element
+   */
+  loadFromReadElement() {
+    if (!this.read_element_id) {
+      console.warn('No read element ID specified');
+      return false;
+    }
+    
+    const readElement = document.getElementById(this.read_element_id);
+    
+    if (!readElement) {
+      console.error(`Read element with ID ${this.read_element_id} not found`);
+      return false;
+    }
+    
+    const content = this.getElementContent(readElement);
+    const success = this.setTargetContent(content);
+    
+    if (success) {
+      this.saveCurrentState();
+      this.saveToLocalStorage();
+    }
+    
+    return success;
+  }
+  
+  /**
+   * Load a version by ID or index
+   */
+  loadVersionById(id) {
+    // Convert ID to number if it's a string
+    const numericId = parseInt(id);
+    
+    // Try to find by ID first
+    let index = this.history.findIndex(state => state.id === numericId);
+    
+    // If not found by ID, try to use the id as an index
+    if (index === -1 && !isNaN(numericId) && numericId >= 0 && numericId < this.history.length) {
+      index = numericId;
+    }
+    
+    // If found, load this version
+    if (index !== -1) {
+      this.current_position = index;
+      const content = this.history[index].content;
+      
+      const success = this.setTargetContent(content);
+      
+      if (success) {
+        // Update localStorage with current state
+        this.saveToLocalStorage();
+        this.saveHistoryToStorage();
+        
+        // Update select element
+        this.updateSelectOptions();
+      }
+      
+      return success;
+    }
+    
+    console.warn(`Version with ID ${id} not found`);
+    return false;
+  }
+  
+  /**
+   * Move backward in history
+   */
+  moveBackward() {
+    if (this.current_position <= 0) {
+      console.info('Already at oldest state');
+      return false;
+    }
+    
+    this.current_position--;
+    const content = this.history[this.current_position].content;
+    
+    const success = this.setTargetContent(content);
+    
+    if (success) {
+      // Update localStorage with current state
+      this.saveToLocalStorage();
+      this.saveHistoryToStorage();
+      this.updateSelectOptions();
+    }
+    
+    return success;
+  }
+  
+  /**
+   * Move forward in history
+   */
+  moveForward() {
+    if (this.current_position >= this.history.length - 1) {
+      console.info('Already at newest state');
+      return false;
+    }
+    
+    this.current_position++;
+    const content = this.history[this.current_position].content;
+    
+    const success = this.setTargetContent(content);
+    
+    if (success) {
+      // Update localStorage with current state
+      this.saveToLocalStorage();
+      this.saveHistoryToStorage();
+      this.updateSelectOptions();
+    }
+    
+    return success;
+  }
+  
+  /**
+   * Clear all history and start fresh
+   */
+  clearHistory() {
+    // Keep current content
+    const targetElement = document.getElementById(this.target_element_id);
+    let currentContent = "";
+    
+    if (targetElement) {
+      currentContent = this.getElementContent(targetElement);
+    }
+    
+    // Clear history
+    this.history = [];
+    this.current_position = -1;
+    
+    // Remove from localStorage
+    localStorage.removeItem(this.storage_key);
+    localStorage.removeItem(this.history_key);
+    
+    // Create new initial state with current content
+    if (targetElement) {
+      this.setTargetContent(currentContent);
+      this.saveCurrentState();
+    }
+    
+    // Update select element
+    this.updateSelectOptions();
+    
+    return true;
+  }
+  
+  /**
+   * Get debug info about current state
+   */
+  getDebugInfo() {
+    return {
+      history: this.history,
+      current_position: this.current_position,
+      storage_key: this.storage_key,
+      history_key: this.history_key,
+      options: this.options
+    };
+  }
+}
+
+// Initialize a global registry for state managers
+window.saveStateManagers = window.saveStateManagers || {};
+
+/**
+ * Create or get a save state manager
+ */
+function save_state(target_element_id, name_element_id = null, select_element_id = null, read_element_id = null, options = {}) {
+  // Create if not exists
+  if (!window.saveStateManagers[target_element_id]) {
+    window.saveStateManagers[target_element_id] = new SaveStateManager(
+      target_element_id, 
+      name_element_id,
+      select_element_id,
+      read_element_id, 
+      options
+    );
+  }
+  
+  return window.saveStateManagers[target_element_id];
+}
+
+/**
+ * Load content from read element to target element
+ */
+function save_load(target_element_id) {
+  const manager = save_state(target_element_id);
+  return manager.loadFromReadElement();
+}
+
+/**
+ * Save current state to history
+ */
+function save_vs(target_element_id) {
+  const manager = save_state(target_element_id);
+  return manager.saveCurrentState();
+}
+
+/**
+ * Move forward in history
+ */
+function save_forward(target_element_id) {
+  const manager = save_state(target_element_id);
+  return manager.moveForward();
+}
+
+/**
+ * Move backward in history
+ */
+function save_backward(target_element_id) {
+  const manager = save_state(target_element_id);
+  return manager.moveBackward();
+}
+  
+  </script>
+</body>
+</html>
