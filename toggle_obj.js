@@ -3,35 +3,131 @@
 /**
  * Toggle visibility of DOM elements with optional animations
  * @param {string} whichLayers - Element IDs separated by |
- * @param {string} display1 - First display state (e.g., "block")
- * @param {string} display2 - Second display state (typically "none")
- * @param {Object} options - Animation configuration options
+ * @param {string} display1 - First display states separated by | (e.g., "block|flex|block")
+ * @param {string} display2 - Second display states separated by | (typically "none|none|none")
+ * @param {string|Object} options - Animation configuration options separated by | or global options object
  * @returns {Promise} - Resolves when animations complete
  *
- * display1 and display2 can be any combination of display options. Most common being block, flex, and none
- * block, none will toggle between block and none
- * none, block will toggle between none and block
- * block, flex will toggle between block and flex
- * flex, none will toggle between flex and none
- * none, none is always none
- * block, block is always block
- * flex, flex is always flex
- *
+ * NEW: Per-element configuration support
+ * Examples:
+ * toggle_obj("menu|sidebar", "block|flex", "none|none", "fade:300|slide:left:500")
+ * toggle_obj("popup|alert", "block|block", "none|none", "{useFade:true,duration:300}|bounce:400")
+ * toggle_obj("nav", "flex", "none", {useFade: true, duration: 500}) // backward compatible
  */
 function toggle_obj(whichLayers, display1, display2, options = {}) {
-  // Default options
-  const settings = {
-    useFade: false,
-    useSlide: false,
-    useRotate: false,
-    useBounce: false,
-    slideDirection: "right",
-    duration: 500,
-    easing: "ease",
-    onComplete: null, // Callback function when complete
-    a11yLabel: "", // Accessibility label for screen readers
-    ...options
-  };
+  // Parse options string into individual option objects
+  function parseOptionsString(optionsStr, elementCount) {
+    if (typeof optionsStr === 'object' && !Array.isArray(optionsStr)) {
+      // Backward compatibility: single options object for all elements
+      return Array(elementCount).fill(optionsStr);
+    }
+    
+    if (typeof optionsStr !== 'string') {
+      return Array(elementCount).fill({});
+    }
+    
+    const optionParts = optionsStr.split('|').map(part => part.trim());
+    const parsedOptions = [];
+    
+    for (let i = 0; i < elementCount; i++) {
+      const optionStr = optionParts[i] || '';
+      parsedOptions.push(parseOptionString(optionStr));
+    }
+    
+    return parsedOptions;
+  }
+  
+  // Parse individual option string (JSON or shorthand)
+  function parseOptionString(optionStr) {
+    if (!optionStr || optionStr === 'none' || optionStr === '') {
+      return {};
+    }
+    
+    // Try JSON parsing first
+    if (optionStr.startsWith('{')) {
+      try {
+        // Handle escaped quotes in HTML attributes
+        let cleanJson = optionStr
+          .replace(/\\"/g, '"')  // Handle escaped quotes from HTML
+          .replace(/'/g, '"');   // Replace single quotes with double quotes
+        
+        // If keys aren't quoted, add quotes
+        if (!/"\w+":/g.test(cleanJson)) {
+          cleanJson = cleanJson.replace(/(\w+):/g, '"$1":');
+        }
+        
+        // Quote unquoted string values (like slideDirection:left -> slideDirection:"left")
+        cleanJson = cleanJson.replace(/:([a-zA-Z][a-zA-Z0-9]*)/g, ':"$1"');
+        
+        console.log("Parsing JSON:", cleanJson); // Debug log
+        const parsed = JSON.parse(cleanJson);
+        console.log("Parsed result:", parsed); // Debug log
+        return parsed;
+      } catch (e) {
+        console.warn("toggle_obj: Failed to parse JSON options:", optionStr, "Error:", e.message);
+        // Fall through to shorthand parsing
+      }
+    }
+    
+    // Parse shorthand syntax
+    return parseShorthand(optionStr);
+  }
+  
+  // Parse shorthand like "fade:300", "slide:left:500", etc.
+  function parseShorthand(shorthand) {
+    const parts = shorthand.split(':').map(p => p.trim());
+    const animType = parts[0].toLowerCase();
+    const options = {};
+    
+    switch (animType) {
+      case 'fade':
+        options.useFade = true;
+        if (parts[1]) options.duration = parseInt(parts[1]) || 500;
+        if (parts[2]) options.easing = parts[2];
+        break;
+        
+      case 'slide':
+        options.useSlide = true;
+        if (parts[1]) options.slideDirection = parts[1];
+        if (parts[2]) options.duration = parseInt(parts[2]) || 500;
+        if (parts[3]) options.easing = parts[3];
+        break;
+        
+      case 'rotate':
+        options.useRotate = true;
+        if (parts[1]) options.duration = parseInt(parts[1]) || 500;
+        if (parts[2]) options.easing = parts[2];
+        break;
+        
+      case 'bounce':
+        options.useBounce = true;
+        if (parts[1]) options.duration = parseInt(parts[1]) || 500;
+        if (parts[2]) options.easing = parts[2];
+        break;
+        
+      default:
+        console.warn("toggle_obj: Unknown animation shorthand:", animType);
+        break;
+    }
+    
+    return options;
+  }
+  
+  // Parse display states
+  function parseDisplayStates(displayStr, elementCount) {
+    if (typeof displayStr !== 'string') {
+      return Array(elementCount).fill(displayStr || 'block');
+    }
+    
+    const displayParts = displayStr.split('|').map(part => part.trim());
+    const displays = [];
+    
+    for (let i = 0; i < elementCount; i++) {
+      displays.push(displayParts[i] || displayParts[0] || 'block');
+    }
+    
+    return displays;
+  }
   
   // Validate inputs
   if (!whichLayers || typeof whichLayers !== 'string') {
@@ -47,29 +143,34 @@ function toggle_obj(whichLayers, display1, display2, options = {}) {
     return Promise.reject(new Error("No valid element IDs provided"));
   }
   
+  // Parse display states and options for each element
+  const display1States = parseDisplayStates(display1, elementIds.length);
+  const display2States = parseDisplayStates(display2, elementIds.length);
+  const elementOptions = parseOptionsString(options, elementIds.length);
+  
   // Get easing function based on options
-  const getEasingFunction = () => {
+  const getEasingFunction = (settings) => {
     if (settings.useBounce) {
       return "cubic-bezier(0.68, -0.55, 0.27, 1.55)";
     }
-    return settings.easing;
+    return settings.easing || "ease";
   };
   
   // Generate transform string based on settings and direction
-  const getTransform = (isHiding, useInitial = false) => {
+  const getTransform = (settings, isHiding, useInitial = false) => {
     const transforms = [];
     const moveDistance = (settings.slideDirection === "right" || settings.slideDirection === "left") ? "100px" : "50px";
     
     // Slide effect
     if (settings.useSlide) {
-      const direction = settings.slideDirection;
+      const direction = settings.slideDirection || "right";
       const isInitial = useInitial;
       
       switch(direction) {
-        case "right":
+        case "left":
           transforms.push(`translateX(${isHiding !== isInitial ? moveDistance : `-${moveDistance}`})`);
           break;
-        case "left":
+        case "right":
           transforms.push(`translateX(${isHiding !== isInitial ? `-${moveDistance}` : moveDistance})`);
           break;
         case "up":
@@ -99,8 +200,8 @@ function toggle_obj(whichLayers, display1, display2, options = {}) {
     return transforms.length > 0 ? transforms.join(" ") : "";
   };
   
-  // Process each element and collect promises
-  const promises = elementIds.map(elementId => {
+  // Process each element with its individual settings
+  const promises = elementIds.map((elementId, index) => {
     return new Promise((resolve) => {
       // Get element
       const elem = document.getElementById(elementId);
@@ -110,14 +211,32 @@ function toggle_obj(whichLayers, display1, display2, options = {}) {
         return;
       }
       
+      // Merge element-specific options with defaults
+      const settings = {
+        useFade: false,
+        useSlide: false,
+        useRotate: false,
+        useBounce: false,
+        slideDirection: "right",
+        duration: 500,
+        easing: "ease",
+        onComplete: null,
+        a11yLabel: "",
+        ...elementOptions[index]
+      };
+      
       // Handle accessibility
       if (settings.a11yLabel) {
         elem.setAttribute('aria-label', settings.a11yLabel);
       }
       
+      // Get display states for this element
+      const elemDisplay1 = display1States[index];
+      const elemDisplay2 = display2States[index];
+      
       // Check current state
       const currentDisplay = window.getComputedStyle(elem).display;
-      const newDisplay = (currentDisplay === display2) ? display1 : display2;
+      const newDisplay = (currentDisplay === elemDisplay2) ? elemDisplay1 : elemDisplay2;
       const isHiding = newDisplay === "none";
       
       // If no animation is selected, just toggle immediately
@@ -154,7 +273,7 @@ function toggle_obj(whichLayers, display1, display2, options = {}) {
       }, settings.duration + 50);
       
       // Configure transition
-      const easingFunction = getEasingFunction();
+      const easingFunction = getEasingFunction(settings);
       
       if (isHiding) {
         // --- HIDING ELEMENT ---
@@ -162,7 +281,7 @@ function toggle_obj(whichLayers, display1, display2, options = {}) {
         elem.style.transition = `all ${settings.duration}ms ${easingFunction}`;
         
         // Apply transform effects
-        const transform = getTransform(isHiding);
+        const transform = getTransform(settings, isHiding);
         if (transform) {
           elem.style.transform = transform;
         }
@@ -192,7 +311,7 @@ function toggle_obj(whichLayers, display1, display2, options = {}) {
         }
         
         // Apply initial transforms
-        const initialTransform = getTransform(isHiding, true);
+        const initialTransform = getTransform(settings, isHiding, true);
         if (initialTransform) {
           elem.style.transform = initialTransform;
         }
@@ -220,9 +339,10 @@ function toggle_obj(whichLayers, display1, display2, options = {}) {
   
   // Return a promise that resolves when all animations complete
   return Promise.all(promises).then(() => {
-    // Execute callback if provided
-    if (typeof settings.onComplete === 'function') {
-      settings.onComplete();
+    // Execute callback if provided (only execute once, using first element's callback)
+    const firstElementSettings = elementOptions[0] || {};
+    if (typeof firstElementSettings.onComplete === 'function') {
+      firstElementSettings.onComplete();
     }
   });
 }
